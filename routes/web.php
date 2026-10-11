@@ -10,82 +10,80 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 
-/*
-|--------------------------------------------------------------------------
-| Public Storefront Routes
-|--------------------------------------------------------------------------
-*/
-
-// Home / Catalog Storefront Page (Shows 5 rows = 20 products per page)
+// Home page route
 Route::get('/', function () {
+    $allProducts = Product::with('category')->inRandomOrder()->paginate(20);
+    
+    $ignoredCategories = [
+        'Electronics', 
+        'Gaming Peripherals', 
+        'Smart Wearables'
+    ];
+    
+    $allowedCategories = Category::whereNotIn('name', $ignoredCategories)->get();
+
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
-        'products' => Product::with('category')->inRandomOrder()->paginate(20),
-        'categories' => Category::whereNotIn('name', [
-            'Electronics', 
-            'Gaming Peripherals', 
-            'Smart Wearables'
-        ])->get(),
+        'products' => $allProducts,
+        'categories' => $allowedCategories,
     ]);
 })->name('home');
 
-// Single Product Details Page
+// View single product
 Route::get('/products/{id}', function ($id) {
-    $product = Product::with('category')->findOrFail($id);
+    $singleProduct = Product::with('category')->findOrFail($id);
+    
     return Inertia::render('Products/Show', [
-        'product' => $product,
+        'product' => $singleProduct,
     ]);
 })->name('products.show');
 
-// About Us Page
+// Static info pages
 Route::get('/about', function () {
     return Inertia::render('About');
 })->name('about');
 
-// Contact Us Page
 Route::get('/contact', function () {
     return Inertia::render('Contact');
 })->name('contact');
 
-// Shipping Policy Page
 Route::get('/shipping-policy', function () {
     return Inertia::render('ShippingPolicy');
 })->name('shipping.policy');
 
-// Store Policy & Terms Page
 Route::get('/policy', function () {
     return Inertia::render('Policy');
 })->name('policy');
 
-/*
-|--------------------------------------------------------------------------
-| Authenticated User & Admin Routes
-|--------------------------------------------------------------------------
-*/
 
+// Protected routes for logged in users and admin
 Route::middleware(['auth'])->group(function () {
-    // User Account Page (Order History)
+
+    // User dashboard order history
     Route::get('/account', function () {
+        $userId = auth()->id();
+        $userOrders = Order::with('items.product')
+            ->where('user_id', $userId)
+            ->latest()
+            ->get();
+
         return Inertia::render('Account', [
-            'orders' => Order::with('items.product')
-                ->where('user_id', auth()->id())
-                ->latest()
-                ->get(),
+            'orders' => $userOrders,
         ]);
     })->name('account');
 
-    // Checkout Page & Order Creation
+    // Checkout page
     Route::get('/checkout', function () {
         return Inertia::render('Checkout');
     })->name('checkout');
 
     Route::post('/orders', [OrderController::class, 'store'])->name('orders.store');
 
-    // User Cancel Order Endpoint
+    // Cancel my order
     Route::patch('/orders/{order}/cancel', function (Order $order) {
         if ($order->user_id !== auth()->id()) {
-            abort(403, 'Unauthorized action.');
+            abort(403, 'Not allowed.');
         }
 
         if ($order->status !== 'pending') {
@@ -93,47 +91,57 @@ Route::middleware(['auth'])->group(function () {
         }
 
         $order->update(['status' => 'cancelled']);
-        return back()->with('success', 'Order cancelled successfully.');
+        return back()->with('success', 'Order cancelled.');
     })->name('orders.cancel');
 
-    // Protected Admin Dashboard Route
+    // Admin Panel Route
     Route::get('/dashboard', function () {
-        if (auth()->user()->email !== 'anees12345@gmail.com') {
+        $adminEmail = 'anees12345@gmail.com';
+        
+        if (auth()->user()->email !== $adminEmail) {
             return redirect()->route('home');
         }
 
+        $allProductsAdmin = Product::with('category')->latest()->get();
+        $allCategoriesAdmin = Category::all();
+        $allOrdersAdmin = Order::with(['user', 'items.product'])->latest()->get();
+
         return Inertia::render('Dashboard', [
-            'products'   => Product::with('category')->latest()->get(),
-            'categories' => Category::all(),
-            'orders'     => Order::with(['user', 'items.product'])->latest()->get(),
+            'products'   => $allProductsAdmin,
+            'categories' => $allCategoriesAdmin,
+            'orders'     => $allOrdersAdmin,
         ]);
     })->name('dashboard');
 
-    // Admin Order Status Update
+    // Update order status (Admin)
     Route::patch('/admin/orders/{order}/status', function (Request $request, Order $order) {
-        if (auth()->user()->email !== 'anees12345@gmail.com') {
-            abort(403, 'Unauthorized access.');
+        $adminEmail = 'anees12345@gmail.com';
+        if (auth()->user()->email !== $adminEmail) {
+            abort(403, 'Unauthorized.');
         }
+        
         return app(OrderController::class)->updateStatus($request, $order);
     })->name('admin.orders.status');
 
-    // Admin Delete / Clear Order Endpoint
+    // Delete order (Admin)
     Route::delete('/admin/orders/{order}', function (Order $order) {
-        if (auth()->user()->email !== 'anees12345@gmail.com') {
-            abort(403, 'Unauthorized access.');
+        $adminEmail = 'anees12345@gmail.com';
+        if (auth()->user()->email !== $adminEmail) {
+            abort(403, 'Unauthorized.');
         }
 
         $order->delete();
-        return back()->with('success', 'Order cleared successfully.');
+        return back()->with('success', 'Order deleted.');
     })->name('admin.orders.destroy');
 
-    // Admin Create Product with File Upload from Folder
+    // Add new product (Admin)
     Route::post('/products', function (Request $request) {
-        if (auth()->user()->email !== 'anees12345@gmail.com') {
-            abort(403, 'Unauthorized access.');
+        $adminEmail = 'anees12345@gmail.com';
+        if (auth()->user()->email !== $adminEmail) {
+            abort(403, 'Unauthorized.');
         }
 
-        $validated = $request->validate([
+        $formFields = $request->validate([
             'title'       => 'required|string|max:255',
             'price'       => 'required|numeric',
             'category_id' => 'required|exists:categories,id',
@@ -143,29 +151,30 @@ Route::middleware(['auth'])->group(function () {
 
         $imagePath = null;
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('products', 'public');
-            $imagePath = '/storage/' . $path;
+            $uploadedFile = $request->file('image')->store('products', 'public');
+            $imagePath = '/storage/' . $uploadedFile;
         }
 
         Product::create([
-            'title'       => $validated['title'],
-            'slug'        => Str::slug($validated['title']) . '-' . time(),
-            'price'       => $validated['price'],
-            'category_id' => $validated['category_id'],
-            'description' => $validated['description'] ?? null,
+            'title'       => $formFields['title'],
+            'slug'        => Str::slug($formFields['title']) . '-' . time(),
+            'price'       => $formFields['price'],
+            'category_id' => $formFields['category_id'],
+            'description' => $formFields['description'] ?? null,
             'image'       => $imagePath,
         ]);
 
-        return back()->with('success', 'Product created successfully.');
+        return back()->with('success', 'Product added successfully.');
     })->name('products.store');
 
-    // Admin Update (Edit) Product Endpoint
+    // Edit product (Admin)
     Route::put('/products/{product}', function (Request $request, Product $product) {
-        if (auth()->user()->email !== 'anees12345@gmail.com') {
-            abort(403, 'Unauthorized access.');
+        $adminEmail = 'anees12345@gmail.com';
+        if (auth()->user()->email !== $adminEmail) {
+            abort(403, 'Unauthorized.');
         }
 
-        $validated = $request->validate([
+        $formFields = $request->validate([
             'title'       => 'required|string|max:255',
             'price'       => 'required|numeric',
             'category_id' => 'required|exists:categories,id',
@@ -174,16 +183,16 @@ Route::middleware(['auth'])->group(function () {
         ]);
 
         $updateData = [
-            'title'       => $validated['title'],
-            'slug'        => Str::slug($validated['title']) . '-' . time(),
-            'price'       => $validated['price'],
-            'category_id' => $validated['category_id'],
-            'description' => $validated['description'] ?? null,
+            'title'       => $formFields['title'],
+            'slug'        => Str::slug($formFields['title']) . '-' . time(),
+            'price'       => $formFields['price'],
+            'category_id' => $formFields['category_id'],
+            'description' => $formFields['description'] ?? null,
         ];
 
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('products', 'public');
-            $updateData['image'] = '/storage/' . $path;
+            $uploadedFile = $request->file('image')->store('products', 'public');
+            $updateData['image'] = '/storage/' . $uploadedFile;
         }
 
         $product->update($updateData);
@@ -191,17 +200,18 @@ Route::middleware(['auth'])->group(function () {
         return back()->with('success', 'Product updated successfully.');
     })->name('products.update');
 
-    // Admin Delete Product Endpoint
+    // Delete product (Admin)
     Route::delete('/products/{product}', function (Product $product) {
-        if (auth()->user()->email !== 'anees12345@gmail.com') {
-            abort(403, 'Unauthorized access.');
+        $adminEmail = 'anees12345@gmail.com';
+        if (auth()->user()->email !== $adminEmail) {
+            abort(403, 'Unauthorized.');
         }
         
         $product->delete();
-        return back()->with('success', 'Product deleted successfully.');
+        return back()->with('success', 'Product deleted.');
     })->name('products.destroy');
 
-    // Profile Management
+    // User Profile Routes
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');

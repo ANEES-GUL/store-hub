@@ -9,22 +9,27 @@ export default function Contact() {
         e.preventDefault();
         setSubmitted(true);
     };
-
     return (
         <div className="min-h-screen bg-transparent text-slate-100 font-sans relative selection:bg-indigo-500 selection:text-white overflow-x-hidden flex flex-col justify-between">
             <Head title="Contact Us - StoreHub" />
             <Background3D />
 
+
+
+
             {/* Navbar */}
             <header className="w-full bg-slate-950/80 backdrop-blur-2xl border-b border-indigo-500/20 sticky top-0 z-40 shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between relative z-10">
                     <div className="flex items-center gap-8">
+
                         <Link href="/" className="text-2xl font-black text-white tracking-wider flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center font-black text-slate-950 text-base">
                                 SH
                             </div>
                             Store<span className="bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Hub</span>
                         </Link>
+
+
 
                         <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-300">
                             <Link href="/about" className="hover:text-cyan-400 transition">About Us</Link>
@@ -37,6 +42,10 @@ export default function Contact() {
                     </Link>
                 </div>
             </header>
+
+
+
+
 
             {/* Form Content */}
             <main className="relative z-10 max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16 flex-1 w-full">
@@ -79,6 +88,11 @@ export default function Contact() {
                     )}
                 </div>
             </main>
+
+
+
+
+
 
             {/* Footer */}
             <footer className="bg-slate-950/90 backdrop-blur-xl border-t border-slate-800/80 relative z-20 py-8 text-center text-xs text-slate-500">
